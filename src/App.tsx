@@ -723,6 +723,7 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
     const endpoint = type === 'login' ? '/api/auth/login' : '/api/auth/register';
     const body = type === 'login' ? { email, password } : { name, email, password };
 
+    console.log('Submitting auth form to:', endpoint);
     try {
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -730,6 +731,13 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
         body: JSON.stringify(body),
         credentials: 'include'
       });
+      console.log('Auth response status:', res.status);
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await res.text();
+        console.error('Non-JSON response:', text);
+        throw new Error(`Server returned non-JSON response (${res.status})`);
+      }
       const data = await res.json();
       console.log('Auth response:', data);
       if (res.ok) {
@@ -743,8 +751,9 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
       } else {
         alert(data.error);
       }
-    } catch (e) {
-      alert('Auth failed');
+    } catch (e: any) {
+      console.error('Auth error details:', e);
+      alert(`Auth failed: ${e.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }

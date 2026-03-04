@@ -7,8 +7,11 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import Database from 'better-sqlite3';
 import { GoogleGenAI } from '@google/genai';
+import fs from 'fs';
 
 const db = new Database('tlsf.db');
+console.log('Database file path:', path.resolve('tlsf.db'));
+console.log('Database file exists:', fs.existsSync('tlsf.db'));
 const JWT_SECRET = 'tlsf-secret-key-2026';
 
 // Initialize Database
@@ -76,10 +79,10 @@ db.prepare('DELETE FROM users WHERE email = ?').run(oldAdminEmail);
 const admin = db.prepare('SELECT * FROM users WHERE email = ?').get(newAdminEmail);
 if (!admin) {
   const hashed = bcrypt.hashSync(newAdminPass, 10);
-  db.prepare('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)').run('Super Admin', newAdminEmail, hashed, 'admin');
+  db.prepare('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)').run('Admin', newAdminEmail, hashed, 'admin');
 } else {
-  // Ensure existing admin has the correct role
-  db.prepare('UPDATE users SET role = "admin" WHERE email = ?').run(newAdminEmail);
+  // Ensure existing admin has the correct role and name
+  db.prepare('UPDATE users SET role = "admin", name = "Admin" WHERE email = ?').run(newAdminEmail);
 }
 
 const campaignCount = db.prepare('SELECT COUNT(*) as count FROM campaigns').get().count;
@@ -92,16 +95,29 @@ if (campaignCount === 0) {
   );
 }
 
+console.log('Database initialized. Users:', db.prepare('SELECT COUNT(*) as count FROM users').get().count, 'Campaigns:', db.prepare('SELECT COUNT(*) as count FROM campaigns').get().count);
+console.log('Admin users:', db.prepare('SELECT email, role FROM users WHERE role = "admin"').all());
+
 async function startServer() {
+  console.log('Starting server...');
   const app = express();
   const PORT = 3000;
+
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.url}`);
+    next();
+  });
 
   app.use(express.json());
   app.use(cookieParser());
   app.use(cors({
-    origin: true,
+    origin: (origin, callback) => callback(null, true),
     credentials: true
   }));
+
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok' });
+  });
 
   // Auth Middleware
   const authenticate = (req: any, res: any, next: any) => {
@@ -132,17 +148,29 @@ async function startServer() {
 
   app.post('/api/auth/login', (req, res) => {
     const { email, password } = req.body;
-    const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-    if (!user || !bcrypt.compareSync(password, user.password)) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+    console.log('Login attempt for:', email);
+    try {
+      const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+      if (!user) {
+        console.log('User not found:', email);
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+      if (!bcrypt.compareSync(password, user.password)) {
+        console.log('Invalid password for:', email);
+        return res.status(401).json({ error: 'Invalid credentials' });
+      }
+      console.log('Login successful for:', email, 'Role:', user.role);
+      const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET);
+      res.cookie('token', token, { 
+        httpOnly: true, 
+        secure: true, 
+        sameSite: 'none',
+        path: '/'
+      }).json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+    } catch (err) {
+      console.error('Login error:', err);
+      res.status(500).json({ error: 'Internal server error' });
     }
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET);
-    res.cookie('token', token, { 
-      httpOnly: true, 
-      secure: true, 
-      sameSite: 'none',
-      path: '/'
-    }).json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
   });
 
   app.post('/api/auth/logout', (req, res) => {
