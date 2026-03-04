@@ -7,134 +7,111 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import Database from 'better-sqlite3';
 import { GoogleGenAI } from '@google/genai';
-import fs from 'fs';
+import { fileURLToPath } from 'url';
 
-const db = new Database('tlsf.db');
-console.log('Database file path:', path.resolve('tlsf.db'));
-console.log('Database file exists:', fs.existsSync('tlsf.db'));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const JWT_SECRET = 'tlsf-secret-key-2026';
 
-// Initialize Database
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    email TEXT UNIQUE,
-    password TEXT,
-    role TEXT DEFAULT 'user',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);
-
-// Migration: Ensure role column exists (in case table was created earlier without it)
-try {
-  db.exec('ALTER TABLE users ADD COLUMN role TEXT DEFAULT "user"');
-} catch (e) {
-  // Column already exists, ignore error
-}
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS donations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER,
-    amount REAL,
-    method TEXT,
-    campaign_id INTEGER,
-    donor_name TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS campaigns (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title_en TEXT,
-    title_bn TEXT,
-    description_en TEXT,
-    description_bn TEXT,
-    goal REAL,
-    raised REAL DEFAULT 0,
-    image TEXT,
-    active INTEGER DEFAULT 1
-  );
-
-  CREATE TABLE IF NOT EXISTS volunteers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    email TEXT,
-    skills TEXT,
-    availability TEXT,
-    location TEXT,
-    status TEXT DEFAULT 'pending',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-`);
-
-// Seed Admin and Campaigns
-const oldAdminEmail = 'admin@tlsf.org';
-const newAdminEmail = 'amarlovetips@gmail.com';
-const newAdminPass = '33543331aA$';
-
-// Remove old admin if exists
-db.prepare('DELETE FROM users WHERE email = ?').run(oldAdminEmail);
-
-const admin = db.prepare('SELECT * FROM users WHERE email = ?').get(newAdminEmail);
-if (!admin) {
-  const hashed = bcrypt.hashSync(newAdminPass, 10);
-  db.prepare('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)').run('Admin', newAdminEmail, hashed, 'admin');
-} else {
-  // Ensure existing admin has the correct role and name
-  db.prepare('UPDATE users SET role = "admin", name = "Admin" WHERE email = ?').run(newAdminEmail);
-}
-
-const campaignCount = db.prepare('SELECT COUNT(*) as count FROM campaigns').get().count;
-if (campaignCount === 0) {
-  db.prepare('INSERT INTO campaigns (title_en, title_bn, description_en, description_bn, goal, raised, image) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-    'Winter Clothes Distribution', 'শীতবস্ত্র বিতরণ', 'Providing warmth to those in need.', 'অসহায়দের উষ্ণতা প্রদান।', 50000, 12500, 'https://picsum.photos/seed/winter/800/400'
-  );
-  db.prepare('INSERT INTO campaigns (title_en, title_bn, description_en, description_bn, goal, raised, image) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
-    'Flood Relief 2026', 'বন্যা ত্রাণ ২০২৬', 'Emergency aid for flood victims.', 'বন্যা কবলিতদের জন্য জরুরি সহায়তা।', 100000, 45000, 'https://picsum.photos/seed/flood/800/400'
-  );
-}
-
-console.log('Database initialized. Users:', db.prepare('SELECT COUNT(*) as count FROM users').get().count, 'Campaigns:', db.prepare('SELECT COUNT(*) as count FROM campaigns').get().count);
-console.log('Admin users:', db.prepare('SELECT email, role FROM users WHERE role = "admin"').all());
-
 async function startServer() {
-  console.log('Starting server...');
+  console.log('--- TLSF Server Starting ---');
   const app = express();
   const PORT = 3000;
 
-  app.use((req, res, next) => {
-    console.log(`${req.method} ${req.url}`);
-    next();
-  });
+  // Database Initialization
+  let db: Database.Database;
+  try {
+    db = new Database('tlsf.db');
+    console.log('Database connected successfully');
+  } catch (err) {
+    console.error('Failed to connect to database:', err);
+    process.exit(1);
+  }
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      email TEXT UNIQUE,
+      password TEXT,
+      role TEXT DEFAULT 'user',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS donations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      amount REAL,
+      method TEXT,
+      campaign_id INTEGER,
+      donor_name TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS campaigns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title_en TEXT,
+      title_bn TEXT,
+      description_en TEXT,
+      description_bn TEXT,
+      goal REAL,
+      raised REAL DEFAULT 0,
+      image TEXT,
+      active INTEGER DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS volunteers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT,
+      email TEXT,
+      skills TEXT,
+      availability TEXT,
+      location TEXT,
+      status TEXT DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  // Seed Admin and Campaigns
+  const adminEmail = 'amarlovetips@gmail.com';
+  const admin = db.prepare('SELECT * FROM users WHERE email = ?').get(adminEmail);
+  if (!admin) {
+    const hashed = bcrypt.hashSync('33543331aA$', 10);
+    db.prepare('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)').run('Admin', adminEmail, hashed, 'admin');
+    console.log('Admin user created');
+  } else {
+    db.prepare("UPDATE users SET role = 'admin', name = 'Admin' WHERE email = ?").run(adminEmail);
+  }
+
+  const campaignCount = db.prepare('SELECT COUNT(*) as count FROM campaigns').get().count;
+  if (campaignCount === 0) {
+    db.prepare('INSERT INTO campaigns (title_en, title_bn, description_en, description_bn, goal, raised, image) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      'Winter Clothes Distribution', 'শীতবস্ত্র বিতরণ', 'Providing warmth to those in need.', 'অসহায়দের উষ্ণতা প্রদান।', 50000, 12500, 'https://picsum.photos/seed/winter/800/400'
+    );
+    db.prepare('INSERT INTO campaigns (title_en, title_bn, description_en, description_bn, goal, raised, image) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      'Flood Relief 2026', 'বন্যা ত্রাণ ২০২৬', 'Emergency aid for flood victims.', 'বন্যা কবলিতদের জন্য জরুরি সহায়তা।', 100000, 45000, 'https://picsum.photos/seed/flood/800/400'
+    );
+    console.log('Campaigns seeded');
+  }
+
+  // Middleware
   app.use(express.json());
   app.use(cookieParser());
-  app.use(cors({
-    origin: (origin, callback) => callback(null, true),
-    credentials: true
-  }));
-
-  app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok' });
-  });
+  app.use(cors({ origin: true, credentials: true }));
 
   // Auth Middleware
   const authenticate = (req: any, res: any, next: any) => {
     const token = req.cookies.token;
-    console.log('Authenticating token:', token ? 'Token exists' : 'No token');
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     try {
       req.user = jwt.verify(token, JWT_SECRET);
-      console.log('Authenticated user:', req.user.email, 'Role:', req.user.role);
       next();
     } catch (e) {
-      console.error('Token verification failed:', e);
       res.status(401).json({ error: 'Invalid token' });
     }
   };
 
   // API Routes
+  app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+
   app.post('/api/auth/register', (req, res) => {
     const { name, email, password } = req.body;
     try {
@@ -148,18 +125,11 @@ async function startServer() {
 
   app.post('/api/auth/login', (req, res) => {
     const { email, password } = req.body;
-    console.log('Login attempt for:', email);
     try {
       const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-      if (!user) {
-        console.log('User not found:', email);
+      if (!user || !bcrypt.compareSync(password, user.password)) {
         return res.status(401).json({ error: 'Invalid credentials' });
       }
-      if (!bcrypt.compareSync(password, user.password)) {
-        console.log('Invalid password for:', email);
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
-      console.log('Login successful for:', email, 'Role:', user.role);
       const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET);
       res.cookie('token', token, { 
         httpOnly: true, 
@@ -168,7 +138,6 @@ async function startServer() {
         path: '/'
       }).json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
     } catch (err) {
-      console.error('Login error:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   });
@@ -242,6 +211,7 @@ async function startServer() {
     }
   });
 
+  // Vite or Static Serving
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -249,8 +219,9 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, 'dist')));
-    app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'dist/index.html')));
+    const distPath = path.join(__dirname, 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
 
   app.listen(PORT, '0.0.0.0', () => {

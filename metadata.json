@@ -1,5 +1,5 @@
 {
-  "name": "HopeVoice NGO Blog",
-  "description": "A professional NGO blog platform with an admin dashboard, blog management, and contact features, built with React, Tailwind CSS, and Supabase.",
+  "name": "TLSF - The Life Saving Foundation",
+  "description": "A comprehensive NGO platform for TLSF, featuring campaign management, donation tracking, volunteer registration, and an AI-powered assistant.",
   "requestFramePermissions": []
 }
