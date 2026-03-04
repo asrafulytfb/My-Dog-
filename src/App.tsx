@@ -5,7 +5,7 @@ import {
   Heart, Users, Globe, ShieldCheck, Menu, X, 
   MessageCircle, Send, LogIn, UserPlus, LayoutDashboard, 
   LogOut, TrendingUp, DollarSign, Calendar, MapPin, 
-  CheckCircle, Languages, ArrowRight, Activity
+  CheckCircle, Languages, ArrowRight, Activity, Newspaper, Briefcase
 } from 'lucide-react';
 import { useAppStore, translations } from './store';
 import { 
@@ -40,6 +40,7 @@ const Navbar = () => {
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
+    localStorage.removeItem('tlsf_token');
     setUser(null);
     navigate('/');
   };
@@ -253,24 +254,34 @@ const Home = () => {
   const [stats, setStats] = useState({ totalFunds: 0, totalVolunteers: 0, totalDonors: 0 });
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [recentDonations, setRecentDonations] = useState<any[]>([]);
+  const [recentWork, setRecentWork] = useState<any[]>([]);
+  const [news, setNews] = useState<any[]>([]);
 
   useEffect(() => {
-    fetch('/api/campaigns').then(res => res.json()).then(setCampaigns);
-    fetch('/api/donations/recent').then(res => res.json()).then(setRecentDonations);
-    // Mocking global stats for home
-    setStats({ totalFunds: 154200, totalVolunteers: 124, totalDonors: 856 });
+    const fetchData = () => {
+      fetch('/api/campaigns').then(res => res.json()).then(setCampaigns);
+      fetch('/api/donations/recent').then(res => res.json()).then(setRecentDonations);
+      fetch('/api/public/stats').then(res => res.json()).then(setStats);
+      fetch('/api/recent-work').then(res => res.json()).then(setRecentWork);
+      fetch('/api/news').then(res => res.json()).then(setNews);
+    };
+
+    fetchData();
+    const interval = setInterval(fetchData, 10000); // Update every 10s for "Live" feel
+    return () => clearInterval(interval);
   }, []);
 
   return (
     <div className="overflow-hidden">
       {/* Hero */}
-      <section className="relative min-h-[80vh] flex items-center pt-20 pb-32">
+      <section className="relative min-h-[90vh] flex items-center pt-20 pb-32">
         <div className="absolute inset-0 z-0">
           <img 
             src="https://images.unsplash.com/photo-1488521787991-ed7bbaae773c?auto=format&fit=crop&q=80&w=2000" 
             className="w-full h-full object-cover brightness-[0.3]"
             referrerPolicy="no-referrer"
           />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-slate-900/50" />
         </div>
         
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
@@ -279,62 +290,82 @@ const Home = () => {
             animate={{ opacity: 1, y: 0 }}
             className="max-w-3xl"
           >
-            <h1 className="text-5xl md:text-7xl font-bold text-white leading-tight mb-8">
-              {t.hero_title}
+            <h1 className="text-5xl md:text-8xl font-bold text-white leading-tight mb-8 tracking-tight">
+              {t.hero_slogan}
             </h1>
-            <p className="text-xl text-slate-200 mb-10 leading-relaxed max-w-2xl">
+            <p className="text-xl text-slate-200 mb-10 leading-relaxed max-w-2xl font-medium">
               {t.hero_subtitle}
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
-              <Link to="/campaigns" className="bg-emerald-600 text-white px-8 py-4 rounded-xl text-lg font-bold hover:bg-emerald-700 transition-all shadow-lg flex items-center justify-center gap-2">
-                {t.donate} <ArrowRight className="w-5 h-5" />
+              <Link to="/campaigns" className="bg-emerald-600 text-white px-8 py-4 rounded-2xl text-lg font-bold hover:bg-emerald-700 transition-all shadow-xl shadow-emerald-600/20 flex items-center justify-center gap-2 group">
+                {t.donate} <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Link>
-              <Link to="/about" className="bg-white/10 backdrop-blur-md text-white border border-white/20 px-8 py-4 rounded-xl text-lg font-bold hover:bg-white/20 transition-all flex items-center justify-center">
-                Learn More
+              <Link to="/volunteer" className="bg-white/10 backdrop-blur-md text-white border border-white/20 px-8 py-4 rounded-2xl text-lg font-bold hover:bg-white/20 transition-all flex items-center justify-center">
+                {t.volunteer_join_cta}
               </Link>
             </div>
           </motion.div>
         </div>
 
         {/* Donation Ticker */}
-        <div className="absolute bottom-0 left-0 right-0 bg-emerald-900/80 backdrop-blur-sm py-3 overflow-hidden">
-          <div className="flex animate-marquee whitespace-nowrap gap-12 text-white text-sm font-medium">
-            {recentDonations.map((d, i) => (
-              <span key={i} className="flex items-center gap-2">
-                <Heart className="w-4 h-4 text-emerald-400 fill-current" />
-                {d.donor_name || 'Anonymous'} donated ${d.amount}
-              </span>
-            ))}
-            {/* Duplicate for seamless loop */}
-            {recentDonations.map((d, i) => (
-              <span key={`dup-${i}`} className="flex items-center gap-2">
-                <Heart className="w-4 h-4 text-emerald-400 fill-current" />
-                {d.donor_name || 'Anonymous'} donated ${d.amount}
-              </span>
-            ))}
+        <div className="absolute bottom-0 left-0 right-0 bg-emerald-950/90 backdrop-blur-md py-4 border-t border-emerald-800/30 overflow-hidden">
+          <div className="flex animate-marquee whitespace-nowrap gap-16 text-white text-sm font-bold uppercase tracking-widest">
+            {recentDonations.length > 0 ? (
+              <>
+                {recentDonations.map((d, i) => (
+                  <span key={i} className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-emerald-400">{d.donor_name || 'Anonymous'}</span>
+                    <span className="text-slate-400">donated</span>
+                    <span className="text-white">${d.amount}</span>
+                  </span>
+                ))}
+                {/* Duplicate for seamless loop */}
+                {recentDonations.map((d, i) => (
+                  <span key={`dup-${i}`} className="flex items-center gap-3">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-emerald-400">{d.donor_name || 'Anonymous'}</span>
+                    <span className="text-slate-400">donated</span>
+                    <span className="text-white">${d.amount}</span>
+                  </span>
+                ))}
+              </>
+            ) : (
+              <span className="px-12">Waiting for new donations...</span>
+            )}
           </div>
         </div>
       </section>
 
-      {/* Stats */}
-      <section className="py-20 bg-white">
+      {/* Stats / Fund Counter */}
+      <section className="py-24 bg-white relative overflow-hidden">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
-              { icon: DollarSign, label: t.total_raised, value: `$${stats.totalFunds.toLocaleString()}` },
-              { icon: Activity, label: t.active_campaigns, value: campaigns.length },
-              { icon: Users, label: t.volunteers, value: stats.totalVolunteers },
+              { icon: DollarSign, label: t.total_raised, value: `$${stats.totalFunds.toLocaleString()}`, color: 'bg-emerald-600' },
+              { icon: Activity, label: t.active_campaigns, value: campaigns.length, color: 'bg-blue-600' },
+              { icon: Users, label: t.volunteers, value: stats.totalVolunteers, color: 'bg-purple-600' },
             ].map((stat, i) => (
               <motion.div 
                 key={i}
-                whileHover={{ y: -5 }}
-                className="bg-slate-50 p-8 rounded-3xl text-center border border-slate-100"
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.1 }}
+                className="relative group"
               >
-                <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-emerald-600/10 text-emerald-600 mb-4">
-                  <stat.icon className="w-6 h-6" />
+                <div className="absolute inset-0 bg-slate-50 rounded-[2.5rem] transition-transform group-hover:scale-[1.02] duration-500" />
+                <div className="relative p-10 text-center">
+                  <div className={`inline-flex items-center justify-center w-16 h-16 rounded-2xl ${stat.color} text-white mb-6 shadow-lg`}>
+                    <stat.icon className="w-8 h-8" />
+                  </div>
+                  <div className="text-5xl font-black text-slate-900 mb-2 tracking-tighter">
+                    {stat.value}
+                  </div>
+                  <div className="text-sm font-bold text-slate-400 uppercase tracking-[0.2em]">
+                    {stat.label}
+                  </div>
                 </div>
-                <div className="text-4xl font-bold text-slate-900 mb-2">{stat.value}</div>
-                <div className="text-sm font-medium text-slate-500 uppercase tracking-wider">{stat.label}</div>
               </motion.div>
             ))}
           </div>
@@ -342,22 +373,127 @@ const Home = () => {
       </section>
 
       {/* Campaigns Preview */}
-      <section className="py-24 bg-slate-50">
+      <section className="py-32 bg-slate-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-end mb-12">
-            <div>
-              <h2 className="text-4xl font-bold text-slate-900 mb-4">{t.active_campaigns}</h2>
-              <p className="text-slate-600">Support our ongoing efforts to make a difference.</p>
+          <div className="flex flex-col md:flex-row justify-between items-end mb-16 gap-6">
+            <div className="max-w-2xl">
+              <h2 className="text-5xl font-bold text-slate-900 mb-6 tracking-tight">{t.active_campaigns}</h2>
+              <p className="text-xl text-slate-600 leading-relaxed">Support our ongoing efforts to make a difference in communities facing critical challenges.</p>
             </div>
-            <Link to="/campaigns" className="text-emerald-600 font-bold flex items-center gap-2 hover:gap-3 transition-all">
-              View All <ArrowRight className="w-4 h-4" />
+            <Link to="/campaigns" className="bg-white text-slate-900 px-8 py-4 rounded-2xl font-bold border border-slate-200 hover:bg-slate-50 transition-all flex items-center gap-2 shadow-sm">
+              View All Campaigns <ArrowRight className="w-5 h-5" />
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
             {campaigns.slice(0, 3).map((c) => (
               <CampaignCard key={c.id} campaign={c} />
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Recent Work */}
+      <section className="py-32 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-20">
+            <h2 className="text-5xl font-bold text-slate-900 mb-6 tracking-tight">{t.recent_work}</h2>
+            <p className="text-xl text-slate-600 max-w-2xl mx-auto">A glimpse into our recent impact and successful initiatives across the country.</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+            {recentWork.map((work, i) => (
+              <motion.div 
+                key={i}
+                initial={{ opacity: 0, scale: 0.95 }}
+                whileInView={{ opacity: 1, scale: 1 }}
+                className="group cursor-pointer"
+              >
+                <div className="relative aspect-[16/10] rounded-[2.5rem] overflow-hidden mb-8 shadow-2xl">
+                  <img src={work.image} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" referrerPolicy="no-referrer" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  <div className="absolute bottom-8 left-8 right-8 translate-y-4 group-hover:translate-y-0 opacity-0 group-hover:opacity-100 transition-all duration-500">
+                    <div className="bg-white/20 backdrop-blur-md border border-white/30 p-6 rounded-2xl">
+                      <p className="text-white font-medium">{lang === 'en' ? work.description_en : work.description_bn}</p>
+                    </div>
+                  </div>
+                </div>
+                <h3 className="text-2xl font-bold text-slate-900 mb-2 group-hover:text-emerald-600 transition-colors">
+                  {lang === 'en' ? work.title_en : work.title_bn}
+                </h3>
+                <div className="flex items-center gap-2 text-slate-400 font-medium">
+                  <Calendar className="w-4 h-4" />
+                  {new Date(work.date).toLocaleDateString()}
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* News & Announcements */}
+      <section className="py-32 bg-slate-900 text-white overflow-hidden relative">
+        <div className="absolute top-0 right-0 w-1/2 h-full bg-emerald-600/10 blur-[120px] -z-0" />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+          <div className="flex flex-col md:flex-row justify-between items-center mb-20 gap-8">
+            <div className="text-center md:text-left">
+              <h2 className="text-5xl font-bold mb-6 tracking-tight">{t.news_announcements}</h2>
+              <p className="text-slate-400 text-xl max-w-xl">Stay updated with our latest news, press releases, and upcoming events.</p>
+            </div>
+            <button className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 py-4 rounded-2xl font-bold transition-all shadow-xl shadow-emerald-600/20">
+              View All News
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {news.map((item, i) => (
+              <motion.div 
+                key={i}
+                whileHover={{ y: -10 }}
+                className="bg-white/5 backdrop-blur-sm border border-white/10 p-8 rounded-[2.5rem] hover:bg-white/10 transition-all"
+              >
+                <div className="aspect-video rounded-2xl overflow-hidden mb-6">
+                  <img src={item.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                </div>
+                <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold uppercase tracking-widest mb-4">
+                  <Newspaper className="w-4 h-4" />
+                  Latest Update
+                </div>
+                <h3 className="text-2xl font-bold mb-4 leading-tight">
+                  {lang === 'en' ? item.title_en : item.title_bn}
+                </h3>
+                <p className="text-slate-400 mb-8 line-clamp-3">
+                  {lang === 'en' ? item.content_en : item.content_bn}
+                </p>
+                <button className="text-white font-bold flex items-center gap-2 group">
+                  Read More <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                </button>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Final CTA */}
+      <section className="py-32 bg-emerald-600 relative overflow-hidden">
+        <div className="absolute inset-0 opacity-10">
+          <div className="absolute top-0 left-0 w-64 h-64 bg-white rounded-full blur-[100px]" />
+          <div className="absolute bottom-0 right-0 w-96 h-96 bg-white rounded-full blur-[120px]" />
+        </div>
+        <div className="max-w-5xl mx-auto px-4 text-center relative z-10">
+          <h2 className="text-5xl md:text-7xl font-black text-white mb-8 tracking-tighter">
+            {t.donate_now_cta}
+          </h2>
+          <p className="text-2xl text-emerald-50 mb-12 font-medium opacity-90">
+            Your small contribution can bring a massive change in someone's life. Join us today.
+          </p>
+          <div className="flex flex-col sm:flex-row justify-center gap-6">
+            <Link to="/campaigns" className="bg-white text-emerald-600 px-12 py-5 rounded-2xl text-xl font-black hover:bg-emerald-50 transition-all shadow-2xl">
+              Donate Now
+            </Link>
+            <Link to="/volunteer" className="bg-emerald-700 text-white px-12 py-5 rounded-2xl text-xl font-black hover:bg-emerald-800 transition-all border border-emerald-500">
+              Join as Volunteer
+            </Link>
           </div>
         </div>
       </section>
@@ -589,17 +725,24 @@ const AdminPanel = () => {
   const { user } = useAppStore();
 
   useEffect(() => {
-    // If we have a user and they are not admin, redirect
-    if (user && user.role !== 'admin') {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+    if (user.role !== 'admin') {
       navigate('/dashboard');
       return;
     }
     
-    // If we don't have a user yet, we might still be loading the initial auth state
-    // But we can try to fetch stats anyway as the cookie should be there
-    
     console.log('Fetching admin stats...');
-    fetch('/api/stats', { credentials: 'include' })
+    const token = localStorage.getItem('tlsf_token');
+    const headers: any = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch('/api/stats', { 
+      credentials: 'include',
+      headers
+    })
       .then(res => {
         console.log('Admin stats response status:', res.status);
         if (res.status === 401 || res.status === 403) {
@@ -614,14 +757,15 @@ const AdminPanel = () => {
       })
       .catch(err => {
         console.error('Admin stats fetch failed:', err);
-        setError(err.message);
-        // Only redirect if it's an auth error
         if (err.message === 'Unauthorized') {
           navigate('/login');
+        } else {
+          setError(err.message);
         }
       });
-  }, [user]);
+  }, [user, navigate]);
 
+  if (!user || user.role !== 'admin') return null;
   if (error && error !== 'Unauthorized') {
     return (
       <div className="p-20 text-center">
@@ -754,6 +898,7 @@ const AuthPage = ({ type }: { type: 'login' | 'register' }) => {
       if (res.ok) {
         if (type === 'login') {
           console.log('Login successful, user role:', data.user.role);
+          if (data.token) localStorage.setItem('tlsf_token', data.token);
           setUser(data.user);
           navigate(data.user.role === 'admin' ? '/admin' : '/dashboard');
         } else {
@@ -924,12 +1069,32 @@ const VolunteerForm = () => {
 
 const App = () => {
   const { setUser } = useAppStore();
+  const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/auth/me', { credentials: 'include' })
+    const token = localStorage.getItem('tlsf_token');
+    const headers: any = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch('/api/auth/me', { 
+      credentials: 'include',
+      headers
+    })
       .then(res => res.json())
-      .then(data => setUser(data.user));
-  }, []);
+      .then(data => {
+        setUser(data.user);
+        setAuthLoading(false);
+      })
+      .catch(() => setAuthLoading(false));
+  }, [setUser]);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-emerald-600 animate-pulse font-bold text-xl">TLSF Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <Router>

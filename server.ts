@@ -19,6 +19,8 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  app.set('trust proxy', 1);
+
   // Database Initialization
   let db: Database.Database;
   try {
@@ -68,6 +70,24 @@ async function startServer() {
       status TEXT DEFAULT 'pending',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+    CREATE TABLE IF NOT EXISTS recent_work (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title_en TEXT,
+      title_bn TEXT,
+      description_en TEXT,
+      description_bn TEXT,
+      image TEXT,
+      date DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS news (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title_en TEXT,
+      title_bn TEXT,
+      content_en TEXT,
+      content_bn TEXT,
+      image TEXT,
+      date DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Seed Admin and Campaigns
@@ -92,6 +112,26 @@ async function startServer() {
     console.log('Campaigns seeded');
   }
 
+  const workCount = db.prepare('SELECT COUNT(*) as count FROM recent_work').get().count;
+  if (workCount === 0) {
+    db.prepare('INSERT INTO recent_work (title_en, title_bn, description_en, description_bn, image) VALUES (?, ?, ?, ?, ?)').run(
+      'Medical Camp in Sylhet', 'সিলেটে মেডিকেল ক্যাম্প', 'Free healthcare services for 500+ families.', ' ৫০০+ পরিবারের জন্য বিনামূল্যে স্বাস্থ্যসেবা।', 'https://picsum.photos/seed/medical/800/400'
+    );
+    db.prepare('INSERT INTO recent_work (title_en, title_bn, description_en, description_bn, image) VALUES (?, ?, ?, ?, ?)').run(
+      'School Supplies Distribution', 'স্কুল সামগ্রী বিতরণ', 'Empowering 200 students with education kits.', '২০০ জন শিক্ষার্থীকে শিক্ষা কিট দিয়ে সহায়তা।', 'https://picsum.photos/seed/school/800/400'
+    );
+  }
+
+  const newsCount = db.prepare('SELECT COUNT(*) as count FROM news').get().count;
+  if (newsCount === 0) {
+    db.prepare('INSERT INTO news (title_en, title_bn, content_en, content_bn, image) VALUES (?, ?, ?, ?, ?)').run(
+      'TLSF Annual Gala 2026', 'টিএলএসএফ বার্ষিক গালা ২০২৬', 'Join us for our annual fundraising event.', 'আমাদের বার্ষিক তহবিল সংগ্রহ অনুষ্ঠানে যোগ দিন।', 'https://picsum.photos/seed/gala/800/400'
+    );
+    db.prepare('INSERT INTO news (title_en, title_bn, content_en, content_bn, image) VALUES (?, ?, ?, ?, ?)').run(
+      'New Partnership with Global Health', 'গ্লোবাল হেলথের সাথে নতুন অংশীদারিত্ব', 'Expanding our medical outreach program.', 'আমাদের মেডিকেল আউটরিচ প্রোগ্রাম সম্প্রসারণ।', 'https://picsum.photos/seed/partnership/800/400'
+    );
+  }
+
   // Middleware
   app.use(express.json());
   app.use(cookieParser());
@@ -99,12 +139,22 @@ async function startServer() {
 
   // Auth Middleware
   const authenticate = (req: any, res: any, next: any) => {
-    const token = req.cookies.token;
+    let token = req.cookies.token;
+    
+    // Also check Authorization header
+    const authHeader = req.headers.authorization;
+    if (!token && authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    }
+
+    console.log('Authenticating request to:', req.url, 'Token present:', !!token);
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
     try {
       req.user = jwt.verify(token, JWT_SECRET);
+      console.log('Authenticated user:', req.user.email, 'Role:', req.user.role);
       next();
     } catch (e) {
+      console.error('Token verification failed:', e);
       res.status(401).json({ error: 'Invalid token' });
     }
   };
@@ -125,19 +175,30 @@ async function startServer() {
 
   app.post('/api/auth/login', (req, res) => {
     const { email, password } = req.body;
+    console.log('Login attempt for:', email);
     try {
       const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
       if (!user || !bcrypt.compareSync(password, user.password)) {
+        console.log('Login failed: Invalid credentials');
         return res.status(401).json({ error: 'Invalid credentials' });
       }
       const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET);
-      res.cookie('token', token, { 
-        httpOnly: true, 
-        secure: true, 
+      console.log('Login successful for:', email, 'Role:', user.role);
+      
+      const cookieOptions: any = {
+        httpOnly: true,
+        secure: true,
         sameSite: 'none',
-        path: '/'
-      }).json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+        path: '/',
+        maxAge: 24 * 60 * 60 * 1000 // 1 day
+      };
+      
+      res.cookie('token', token, cookieOptions).json({ 
+        token,
+        user: { id: user.id, name: user.name, email: user.email, role: user.role } 
+      });
     } catch (err) {
+      console.error('Login error:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   });
@@ -152,7 +213,12 @@ async function startServer() {
   });
 
   app.get('/api/auth/me', (req, res) => {
-    const token = req.cookies.token;
+    let token = req.cookies.token;
+    const authHeader = req.headers.authorization;
+    if (!token && authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    }
+
     if (!token) return res.json({ user: null });
     try {
       const decoded = jwt.verify(token, JWT_SECRET);
@@ -177,6 +243,23 @@ async function startServer() {
   app.get('/api/donations/recent', (req, res) => {
     const donations = db.prepare('SELECT * FROM donations ORDER BY created_at DESC LIMIT 10').all();
     res.json(donations);
+  });
+
+  app.get('/api/public/stats', (req, res) => {
+    const totalFunds = db.prepare('SELECT SUM(amount) as total FROM donations').get().total || 0;
+    const totalVolunteers = db.prepare('SELECT COUNT(*) as count FROM volunteers').get().count;
+    const totalDonors = db.prepare('SELECT COUNT(DISTINCT donor_name) as count FROM donations').get().count;
+    res.json({ totalFunds, totalVolunteers, totalDonors });
+  });
+
+  app.get('/api/recent-work', (req, res) => {
+    const work = db.prepare('SELECT * FROM recent_work ORDER BY date DESC LIMIT 6').all();
+    res.json(work);
+  });
+
+  app.get('/api/news', (req, res) => {
+    const news = db.prepare('SELECT * FROM news ORDER BY date DESC LIMIT 6').all();
+    res.json(news);
   });
 
   app.post('/api/volunteers', (req, res) => {
